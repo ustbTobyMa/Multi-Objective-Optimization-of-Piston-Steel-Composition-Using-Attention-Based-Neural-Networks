@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data files (keep structure but ignore actual data)
+data/raw/*.csv
+data/raw/*.xlsx
+data/raw/*.xls
+data/processed/*.pkl
+data/processed/*.npy
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Model files
+*.pth
+*.pt
+*.h5
+*.ckpt
+models/*.pkl
+
+# Results (keep structure)
+results/figures/*.png
+results/figures/*.pdf
+results/optimization/*.csv
+results/predictions/*.csv
+!results/figures/.gitkeep
+!results/optimization/.gitkeep
+!results/predictions/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
