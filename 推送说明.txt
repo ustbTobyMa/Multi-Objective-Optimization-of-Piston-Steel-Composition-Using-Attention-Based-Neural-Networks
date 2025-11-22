@@ -1,0 +1,38 @@
+==========================================
+GitHub推送说明
+==========================================
+
+代码已经提交到本地，现在需要推送到GitHub。
+
+最简单的方法：
+
+1. 在Cursor中打开终端（Terminal → New Terminal）
+
+2. 运行以下命令：
+   cd ~/Desktop/Multi-Objective-Optimization-of-Piston-Steel-Composition-Using-Attention-Based-Neural-Networks
+   git push origin main
+
+3. 如果提示输入用户名：
+   输入：ustbTobyMa
+
+4. 如果提示输入密码：
+   输入您的GitHub Personal Access Token（不是密码！）
+   
+   如果没有Token，请：
+   - 访问：https://github.com/settings/tokens
+   - 点击 "Generate new token (classic)"
+   - 勾选 "repo" 权限
+   - 生成并复制token
+   - 粘贴到终端（不会显示，直接粘贴回车即可）
+
+5. 推送成功后，代码就会出现在GitHub上了！
+
+==========================================
+当前状态
+==========================================
+✅ 代码已提交到本地（19个文件，2136行代码）
+⏳ 等待推送到GitHub
+
+提交ID: 0dfa220
+提交信息: Initial commit: Add multi-objective optimization framework
+
