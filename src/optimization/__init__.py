@@ -1,2 +1,0 @@
-"""Multi-objective optimization module."""
-
