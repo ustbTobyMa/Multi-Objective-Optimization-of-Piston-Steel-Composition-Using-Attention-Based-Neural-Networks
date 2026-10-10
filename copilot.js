@@ -1,9 +1,11 @@
-/* V2.2: evidence-based demo answers, transparent calculations and session follow-ups.
+/* V2.2.1: empty-first local chat, cancellable progress and progressive answers.
    This is a deterministic explanation layer, NOT an LLM. Uploaded documents are
    untrusted evidence: always escaped, never executed, never sent to a server. */
 (function () {
   'use strict';
-  const C = { turns: [], scope: 'builtin', subject: 'fatigue', root: '', sequence: 0, metric: {}, pending: false };
+  const C = { turns: [], scope: 'builtin', subject: '', root: '', sequence: 0, metric: {}, pending: false, job: null, draft: '' };
+  // A conversation starts with a user submission, never a seeded question.
+  S.answered=false; S.question=''; S.intent='';
   const original = { page, docsView, addFiles, about: actions.about, settings: actions.settings, newChat: actions.new, reset: actions.reset };
   const titles = {fatigue:'350°C 高周疲劳',lcf:'低周疲劳',tmf:'热机疲劳',thermal:'热扩散与导热',modulus:'弹性模量',wear:'摩擦试验',dsc:'差热分析',casting:'铝合金铸造',machining:'钢活塞机加工'};
   const sourceNames = Object.fromEntries(docs.map(d => [d[0], d[1]]));
@@ -131,69 +133,147 @@
   function uploadAnswer(f,q,focus){return /\.csv$/i.test(f.name)?csvAnswer(f,q,focus)||textAnswer(f,q,focus):textAnswer(f,q,focus);}
   function followups(topic,mode){return mode==='file'?['为什么得到这个结论？','这份资料缺少哪些证据？','下一步该怎么验证？']:topic==='casting'?['为什么不能只调浇注温度？','具体怎么安排对照验证？','用一句话概括建议']:topic==='machining'?['材料去除率是怎么算的？','为什么不能只追求速度？','下一步怎么验证？']:['为什么不能直接下结论？','这个结论的依据是哪几条？','下一步怎么安排验证？'];}
   function renderAnswer(t,latest=true){
+    if(t.cancelled)return `<div class="cancelled-answer">${t.partial?'<div class="copilot-answer">'+t.partial+'</div>':''}<p>已停止。${t.partial?'以上仅为部分内容，回答尚未完成。':'本次没有生成回答。'}</p><button class="btn soft" data-draft="${E(t.q)}">重新编辑这个问题</button></div>`;
     const r=t.result, focus=t.focus;
     let intro=r.conclusion;
     if(focus==='why'&&r.explanations.length){const pattern=/怎么算|怎么得|计算|差值|去除率/.test(t.q)?/差异怎样|参数怎样|为什么得到/:/为什么还不能|为什么不能|为什么不只|为什么这样|为什么暂时/;intro=(r.explanations.find(x=>pattern.test(x[0]))||r.explanations[0])[1];}
     if(focus==='next')intro=r.next;
     if(focus==='evidence')intro=`这个回答使用了 ${r.count||0} 条记录或相关段落。下面可以打开具体依据；观察结果与解释是分开呈现的。`;
     const brief=focus==='brief';
-    return `<div class="copilot-answer"><div class="copilot-answer-top"><span class="copilot-spark">✧</span><b>活塞知识助手</b><span class="badge">${t.scope==='builtin'?'样例分析':'资料解读'} · 规则演示</span></div>${t.follow?`<div class="context-hint">接着“${E(t.contextTitle)}”继续回答 · ${E(t.sourceName)}</div>`:''}<section class="direct-answer"><div class="answer-kicker">${({why:'解释给你听',next:'建议这样验证',evidence:'依据在这里',brief:'给汇报用的一句话'})[focus]||'先说结论'}</div><p>${intro}</p></section>${brief?'':`<div class="explanation-points">${r.explanations.map((x,i)=>`<section><span class="explain-number">0${i+1}</span><div><h3>${x[0]}</h3><p>${x[1]}</p></div></section>`).join('')}</div><section class="next-answer"><h3>下一步可以这样做</h3><p>${r.next}</p>${r.process?`<button class="btn soft" data-page="${r.process}">带着当前问题比较参数 →</button>`:''}</section>`}${latest&&r.metricUI?r.metricUI:''}<details class="answer-evidence" ${focus==='evidence'?'open':''}><summary>查看原始依据与数据 <span>${r.count||0} 条 / 段 · 点击展开</span></summary>${r.evidence}${r.file?`<button class="link" data-open-source="${r.file.cid}">打开完整原文 ↗</button>`:r.refs.map(cite).join(' ')}</details><p class="answer-limit">ⓘ ${r.limit}</p>${latest?`<div class="continue-panel"><b>接着问，不用重新描述背景</b><div class="chips">${followups(t.topic,t.scope==='builtin'?'builtin':'file').map(q=>`<button data-follow="${E(q)}">${q} →</button>`).join('')}</div></div><div class="answer-tools"><button class="link" data-co="copy">复制回答</button><button class="link" data-co="export">保存问答摘要</button><button class="link" data-co="capabilities">查看能力边界</button></div>`:''}</div>`;
+    return `<div class="copilot-answer"><div class="copilot-answer-top"><span class="copilot-spark">✧</span><b>活塞知识助手</b>${t.elapsed?`<small class="response-time">处理与展示 ${t.elapsed} 秒</small>`:''}<span class="badge">${t.scope==='builtin'?'样例分析':'资料解读'} · 规则演示</span></div>${t.follow?`<div class="context-hint">接着“${E(t.contextTitle)}”继续回答 · ${E(t.sourceName)}</div>`:''}<section class="direct-answer"><div class="answer-kicker">${({why:'解释给你听',next:'建议这样验证',evidence:'依据在这里',brief:'给汇报用的一句话'})[focus]||'先说结论'}</div><p>${intro}</p></section>${brief?'':`<div class="explanation-points">${r.explanations.map((x,i)=>`<section><span class="explain-number">0${i+1}</span><div><h3>${x[0]}</h3><p>${x[1]}</p></div></section>`).join('')}</div><section class="next-answer"><h3>下一步可以这样做</h3><p>${r.next}</p>${r.process?`<button class="btn soft" data-page="${r.process}">带着当前问题比较参数 →</button>`:''}</section>`}${latest&&r.metricUI?r.metricUI:''}<details class="answer-evidence" ${focus==='evidence'?'open':''}><summary>查看原始依据与数据 <span>${r.count||0} 条 / 段 · 点击展开</span></summary>${r.evidence}${r.file?`<button class="link" data-open-source="${r.file.cid}">打开完整原文 ↗</button>`:r.refs.map(cite).join(' ')}</details><p class="answer-limit">ⓘ ${r.limit}</p>${latest?`<div class="continue-panel"><b>接着问，不用重新描述背景</b><div class="chips">${followups(t.topic,t.scope==='builtin'?'builtin':'file').map(q=>`<button data-follow="${E(q)}">${q} →</button>`).join('')}</div></div><div class="answer-tools"><button class="link" data-co="copy">复制回答</button><button class="link" data-co="export">保存问答摘要</button><button class="link" data-co="capabilities">查看能力边界</button></div>`:''}</div>`;
   }
   function createTurn(q,topic,follow){
     const focus=/分析|比较|概括|对比/.test(q)?'answer':focusOf(q),f=chosen(),result=f?uploadAnswer(f,q,focus):summarizeBuilt(topic,focus,q);
     return {q,topic,focus,result,follow,scope:C.scope,sourceName:scopeLabel(),contextTitle:f?f.name:titles[topic]||'前一个问题'};
   }
-  function evidenceAside(t){const r=t?.result;return `<aside class="copilot-aside"><div class="card evidence"><span class="eyebrow">ANSWER WITH EVIDENCE</span><h3>回答依据</h3><p class="muted">先读解释，需要时再查看原文。</p>${r?.file?`<button class="docitem" data-open-source="${r.file.cid}"><span class="fileicon">FILE</span><span><b>${E(r.file.name)}</b><small>本次添加 · 未上传服务器</small></span></button>`:(r?.refs||['D01','D03']).map(id=>`<button class="docitem" data-doc="${id}"><span class="fileicon">${id}</span><span><b>${sourceNames[id]}</b><small>内置示例资料</small></span><span>↗</span></button>`).join('')}<button class="btn soft full" data-page="docs">管理资料与问答来源 →</button></div><div class="note-box"><h3>不是检索结果清单</h3><p>结论先行 → 解释差异 → 打开证据 → 安排验证</p><p>当前为演示解读引擎。真实大模型尚未连接，不会伪称已经联网推理。</p><button class="link" data-co="capabilities">了解两种模式的区别 ↗</button></div></aside>`;}
-  knowledge = function () {
+  function evidenceAside(t){
+    const r=t&&!t.cancelled?t.result:null;
+    return `<aside class="copilot-aside"><div class="card evidence"><span class="eyebrow">ANSWER WITH EVIDENCE</span><h3>${r?'本轮回答依据':'资料工作台'}</h3><p class="muted">${r?'先读解释，需要时再查看原文。':'提交问题后，这里显示关联资料与原始记录。'}</p>${r?.file?`<button class="docitem" data-open-source="${r.file.cid}"><span class="fileicon">FILE</span><span><b>${E(r.file.name)}</b><small>本次添加 · 未上传服务器</small></span></button>`:r?r.refs.map(id=>`<button class="docitem" data-doc="${id}"><span class="fileicon">${id}</span><span><b>${sourceNames[id]}</b><small>内置示例资料</small></span><span>↗</span></button>`).join(''):`<div class="evidence-empty"><span aria-hidden="true">▤</span><b>${C.pending?'正在整理关联资料':'等待你的问题'}</b><p>${C.pending?'正在处理所选资料，完成后可在这里核对来源。':'先选资料，再提问。不会预先替你作出结论。'}</p></div>`}<button class="btn soft full" data-page="docs">管理资料与问答来源 →</button></div><div class="note-box"><h3>先提问，再看分析</h3><p>理解问题 → 关联资料 → 核对条件 → 整理回答</p><p>处理进度与分段输出由本地代码组织，不是在线模型思考。</p><button class="link" data-co="capabilities">查看本地演示能力 ↗</button></div></aside>`;
+  }
+  const prompts=[['材料研发','350°C 疲劳寿命差异',questions.fatigue],['铸造工艺','气孔问题先检查什么？',questions.casting],['机加工艺','质量与加工效率如何权衡？',questions.machining]];
+  function welcome(){return `<section class="question-welcome"><div class="welcome-symbol" aria-hidden="true">✧</div><h2>今天想解决哪个材料或工艺问题？</h2><p>输入问题，点击发送后开始分析。也可以先选一个示例，再补充你的要求。</p><div class="welcome-questions">${(C.scope==='builtin'?prompts:[['资料解读','这份资料说明了什么？','请概括这份资料，并解释主要结论'],['数据对比','这份台账的差异有多大？','对比这份台账的数值，并解释差异']]).map(x=>`<button type="button" data-draft="${E(x[2])}"><small>${x[0]}</small><b>${x[1]}</b><span>填入问题 ↗</span></button>`).join('')}</div><div class="welcome-foot">本地演示 · 提交后才生成回答 · 无需密钥</div></section>`;}
+  function progressHTML(job){
+    const labels=['理解问题','关联资料','核对条件','整理回答'];
+    const phase=job.phase==='output'?'正在呈现回答':labels[job.stage];
+    const steps=labels.map((label,i)=>`<div class="process-step ${job.phase==='output'||i<job.stage?'done':i===job.stage?'current':'waiting'}"><span>${job.phase==='output'||i<job.stage?'✓':i+1}</span><b>${label}</b></div>`).join('');
+    const hints=[`正在识别问题主题与关注点。`,`正在读取：${E(job.sourceName)}。`,`正在核对材料、温度与指标的可比较条件。`,job.turn?.result?.missing?'当前资料不足，将解释缺少什么，不强行生成结论。':'正在整理结论、解释与可追溯的依据。'];
+    return `<section class="kb-process ${job.phase==='output'?'outputting':''}" aria-label="本地处理进度"><div class="process-heading"><div class="process-title"><span class="process-orbit" aria-hidden="true"></span><b>${phase}</b><span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span></div><span class="badge">本地流程演示</span></div><div class="process-steps">${steps}</div><p class="process-message" role="status">${job.phase==='output'?'分析已整理，正在分段显示。你可以随时停止。':hints[job.stage]}</p><div class="process-bottom"><small>资料处理与展示节奏，不代表大模型内部思考。</small><button class="btn" type="button" data-co="stop-answer">■ 停止回答</button></div></section>`;
+  }
+  function pendingHTML(job){return `<section class="conversation-stage" id="activeQuestion"><div class="question">${E(job.q)}</div>${progressHTML(job)}<div class="copilot-answer answer-stream" aria-busy="true">${job.fragments.slice(0,job.revealed).join('')}</div></section>`;}
+  function chatHTML(){
+    const history=C.turns.map((turn,i)=>!C.pending&&i===C.turns.length-1?`<section class="conversation-stage" id="activeQuestion"><div class="question">${E(turn.q)}</div>${renderAnswer(turn)}`:`<details class="previous-turn"><summary><span>第 ${i+1} 轮${turn.cancelled?' · 已停止':''}</span>${E(turn.q)}</summary>${renderAnswer(turn,false)}</details>`).join('');
+    return history+(C.job?pendingHTML(C.job):C.turns.length?'':welcome());
+  }
+  knowledge=function(){
     const ff=files();if(C.scope!=='builtin'&&!chosen())C.scope='builtin';
-    if(!C.turns.length&&S.answered){C.subject='fatigue';C.root=questions.fatigue;C.turns.push(createTurn(questions.fatigue,'fatigue',false));}
-    const t=C.turns.at(-1);
-    return head('EXPLAINABLE KNOWLEDGE COPILOT','不止找到资料，更要讲清楚答案。','先回答问题，再解释为什么；原始证据可展开，后续问题可接着聊。',btn('＋ 新建对话','new')+btn('▣ 全屏演示','fullscreen'))+`<div class="source-selector card"><div><b>本次回答依据</b><span>内置样例与添加的资料分开使用</span></div><select id="copilotSource" aria-label="选择本次问答资料"><option value="builtin" ${C.scope==='builtin'?'selected':''}>内置材料与工艺样例库</option>${ff.map(f=>`<option value="${f.cid}" ${C.scope===f.cid?'selected':''}>${E(f.name)}</option>`).join('')}</select><button class="btn" data-action="upload">＋ 添加资料</button></div><div class="kb copilot-kb"><div class="card copilot-chat"><div class="panel-head"><h2>✧ 材料与工艺知识助手</h2><span class="grow"></span><span class="badge" id="chatStatus">规则解读 · 未接大模型</span><button class="ib" data-co="transcript" aria-label="查看对话记录">◷</button></div><div id="chatBody" class="chat-body copilot-body" aria-live="polite">${C.turns.map((turn,i)=>i===C.turns.length-1?`<div class="question">${E(turn.q)}</div>${renderAnswer(turn)}`:`<details class="previous-turn"><summary><span>前一轮 ${i+1}</span>${E(turn.q)}</summary>${renderAnswer(turn,false)}</details>`).join('')||`<div class="copilot-welcome"><h2>把问题交给助手，把判断留给工程师。</h2><p>可以问“哪个样例值得复验”，再接着问“为什么”和“依据在哪”。也可添加自己的文本或 CSV 台账。</p></div>`}</div><div class="compose"><div class="chips">${C.scope==='builtin'?`<button data-ask="fatigue">分析 350°C 疲劳寿命</button><button data-ask="casting">气孔问题先改什么？</button><button data-ask="machining">加工参数如何权衡？</button>`:`<button data-follow="请概括这份资料，并解释主要结论">概括这份资料</button><button data-follow="对比这份台账的数值，并解释差异">比较台账数值</button>`}</div><form id="chatForm" class="composer"><textarea id="questionInput" rows="2" maxlength="800" placeholder="直接提问，或接着问：为什么？依据是什么？下一步怎么验证？" aria-label="输入问题"></textarea><button id="send" type="submit" class="btn primary">发送 ↑</button></form><div class="compose-note"><span>资料归纳 + 数值计算 + 规则解释；不是通用大模型</span><span>Enter 发送 · Shift+Enter 换行</span></div></div></div>${evidenceAside(t)}</div>`;
+    const t=C.turns.at(-1), status=C.pending?'正在处理':t?(t.cancelled?'已停止':'回答已完成'):'等待提问';
+    return head('MATERIALS & PROCESS COPILOT','从一个问题开始，讲清数据与工艺。','先输入问题，再看处理进度、回答解释与原始依据。',btn('＋ 新建对话','new')+btn('▣ 全屏演示','fullscreen'))+`<div class="source-selector card"><div><b>本次使用的资料</b><span>内置样例与添加的资料分开使用</span></div><select id="copilotSource" aria-label="选择本次问答资料" ${C.pending?'disabled':''}><option value="builtin" ${C.scope==='builtin'?'selected':''}>内置材料与工艺样例库</option>${ff.map(f=>`<option value="${f.cid}" ${C.scope===f.cid?'selected':''}>${E(f.name)}</option>`).join('')}</select><button class="btn" data-action="upload">＋ 添加资料</button></div><div class="kb copilot-kb"><div class="card copilot-chat"><div class="panel-head"><h2>✧ 材料与工艺知识助手</h2><span class="grow"></span><span class="badge ${C.pending?'':'green'}" id="chatStatus" role="status">${status} · 纯本地</span><button class="ib" data-co="transcript" aria-label="查看对话记录">◷</button></div><div id="chatBody" class="chat-body copilot-body">${chatHTML()}</div><div class="compose"><div class="chips"><span class="draft-hint">点击填入，发送后分析</span>${(C.scope==='builtin'?prompts.map(x=>[x[1],x[2]]):[['概括这份资料','请概括这份资料，并解释主要结论'],['比较台账数值','对比这份台账的数值，并解释差异']]).map(x=>`<button type="button" data-draft="${E(x[1])}" ${C.pending?'disabled':''}>${x[0]}</button>`).join('')}</div><form id="chatForm" class="composer"><textarea id="questionInput" rows="2" maxlength="800" placeholder="例如：请比较 350°C 疲劳样例，说明哪些差异值得复验…" aria-label="输入问题" ${C.pending?'disabled':''}>${E(C.draft)}</textarea><button id="send" type="submit" class="btn primary" ${C.pending||!C.draft.trim()?'disabled':''}>${C.pending?'处理中…':'发送 ↑'}</button>${C.pending?'<button class="btn stop-compose" type="button" data-co="stop-answer">停止</button>':''}</form><div class="compose-note"><span>资料归纳、数值计算与规则解释 · 非通用大模型</span><span><span id="draftCount">${C.draft.length} / 800</span> · Enter 发送</span></div></div></div>${evidenceAside(t)}</div>`;
   };
-  ask = async function(q,preset){
+  function refreshPending(job){
+    if(C.job!==job||job.token!==S.chatToken||S.page!=='knowledge')return false;
+    const target=$('activeQuestion');if(target)target.outerHTML=pendingHTML(job);
+    if($('chatStatus'))$('chatStatus').textContent=job.phase==='output'?'正在呈现回答 · 纯本地':'正在处理 · 纯本地';
+    return true;
+  }
+  function fragmentsFor(turn){
+    // Split complete DOM blocks, never slice raw HTML or expose unfinished tags.
+    const box=document.createElement('div');box.innerHTML=renderAnswer(turn);
+    const answer=box.firstElementChild,result=[];
+    for(const child of answer.children){if(child.classList.contains('explanation-points'))for(const section of child.children)result.push('<div class="explanation-points">'+section.outerHTML+'</div>');else result.push(child.outerHTML);}
+    return result;
+  }
+  function keepTurn(turn){C.turns.push(turn);if(C.turns.length>16)C.turns.shift();}
+  function cancelKnowledge(retain=true){
+    const job=C.job;if(!job)return;
+    S.chatToken++;C.job=null;C.pending=false;S.busy=false;
+    if(retain)keepTurn({q:job.q,topic:job.topic,scope:job.scope,sourceName:job.sourceName,cancelled:true,partial:job.fragments.slice(0,job.revealed).filter(x=>!x.includes('continue-panel')&&!x.includes('answer-tools')&&!x.includes('metric-selector')).join('')});
+    C.subject=job.previousSubject;C.root=job.previousRoot;S.answered=C.turns.length>0;
+  }
+  function prepareQuestion(q){
+    if(C.pending)return;
+    C.draft=String(q||'').trim().slice(0,800);S.answered=C.turns.length>0;page('knowledge');
+    const input=$('questionInput');input?.focus({preventScroll:true});input?.scrollIntoView({block:'center',behavior:S.motion?'instant':'smooth'});
+  }
+  ask=async function(q,preset){
     q=String(q||'').trim().slice(0,800);if(!q||C.pending)return;
     if(titles[preset])C.scope='builtin';
-    const previous=C.turns.at(-1),topic=getTopic(q,preset),follow=!titles[preset]&&!!previous&&previous.scope===C.scope&&isFollow(q)&&(!topicOf(q)||topicOf(q)===C.subject);
+    const previous=C.turns.findLast(t=>!t.cancelled),topic=getTopic(q,preset),follow=!titles[preset]&&!!previous&&previous.scope===C.scope&&isFollow(q)&&(!topicOf(q)||topicOf(q)===C.subject);
+    const previousSubject=C.subject,previousRoot=C.root;
     if(!follow){C.root=q;C.subject=topic||'unsupported';}else if(topic)C.subject=topic;
-    S.question=q;S.intent=C.subject;S.answered=false;S.chatToken++;const token=S.chatToken;C.pending=true;S.busy=true;
-    if(S.page!=='knowledge')page('knowledge');S.busy=true;
-    const body=$('chatBody');body?.insertAdjacentHTML('beforeend',`<div id="pendingAnswer"><div class="question">${E(q)}</div><div class="answer-loading">✧ 正在关联所选资料并整理回答…</div></div>`);if($('send'))$('send').disabled=true;$('pendingAnswer')?.scrollIntoView({block:'nearest',behavior:'smooth'});
+    S.question=q;S.intent=C.subject;S.answered=false;
+    const job={token:++S.chatToken,q,topic:C.subject,scope:C.scope,sourceName:scopeLabel(),previousSubject,previousRoot,stage:0,phase:'processing',fragments:[],revealed:0,turn:null,started:performance.now()};
+    C.job=job;C.pending=true;C.draft='';S.busy=true;page('knowledge');
+    const active=$('activeQuestion'),rect=active?.getBoundingClientRect();
+    if(rect&&(rect.top<95||rect.top>window.innerHeight*.65))active.scrollIntoView({block:'start',behavior:'instant'});
+    const alive=()=>C.job===job&&job.token===S.chatToken&&S.page==='knowledge';
+    const reduced=S.motion||window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     try{
-      const turn=createTurn(q,C.subject,follow);await wait(S.motion?0:300);
-      if(token!==S.chatToken)return;
-      C.turns.push(turn);if(C.turns.length>16)C.turns.shift();S.history.unshift({q,intent:C.subject,time:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});S.history=S.history.slice(0,16);S.answered=true;page('knowledge');const last=$('chatBody')?.querySelector(':scope > .question');last?.scrollIntoView({block:'start',behavior:'smooth'});
-    }catch(error){console.error('Knowledge interpretation failed:',error);toast('资料格式暂无法解读，请换成 UTF-8 文本或标准 CSV。');page('knowledge');}
-    finally{C.pending=false;S.busy=false;if($('send'))$('send').disabled=false;}
+      for(let i=0;i<4;i++){
+        if(!alive())return;
+        job.stage=i;
+        if(i===3)job.turn=createTurn(q,job.topic,follow);
+        refreshPending(job);await wait(reduced?120:[550,650,650,500][i]);
+      }
+      if(!alive())return;
+      job.fragments=fragmentsFor(job.turn);job.phase='output';refreshPending(job);
+      for(let i=1;i<=job.fragments.length;i++){
+        await wait(reduced?0:175);if(!alive())return;
+        job.revealed=i;refreshPending(job);
+      }
+      if(!alive())return;
+      job.turn.elapsed=((performance.now()-job.started)/1000).toFixed(1);keepTurn(job.turn);
+      S.history.unshift({q,intent:job.topic,time:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});S.history=S.history.slice(0,16);
+      C.job=null;C.pending=false;S.busy=false;S.answered=true;page('knowledge');
+    }catch(error){
+      if(!alive())return;
+      cancelKnowledge(true);page('knowledge');toast('本次未完成，请检查资料格式后重新提问。');
+    }finally{
+      // A cancelled timer must not unlock or overwrite a newer task.
+      if(C.job===job){C.job=null;C.pending=false;S.busy=false;if(S.page==='knowledge')page('knowledge');}
+    }
   };
-  const oldStop=stop;stop=function(notify=true){C.pending=false;oldStop(notify);};
-  page=function(v,write=true){original.page(v,write);if(S.page==='docs')enhanceDocs();};
-  actions.new=function(){C.turns=[];C.root='';C.pending=false;C.subject='fatigue';original.newChat();};
-  actions.reset=function(){C.turns=[];C.root='';C.pending=false;C.scope='builtin';original.reset();};
-  function capability(){modal('资料在哪里，与回答是否智能，是两件事',`<h3>这版已经能做</h3><p>依据样例数值形成结论、解释计算方法和判断边界，保留当前对话上下文。添加的 TXT / MD 可做段落归纳，CSV 可选列、计算差值并引用来源。</p><h3>仍然不能冒充的能力</h3><p>当前没有连接通用大模型。文本解释采用抽取与规则，无法可靠理解任意问题；不含 PDF 解析、图片识别、语义向量检索或复杂统计推断。</p><h3>真实 AI 的接入方式</h3><p>保留本网页界面，由受保护的后端读取所选资料和对话，调用模型返回回答及引用。模型密钥保存在后端，不放进网页或公开 GitHub 仓库。</p><p>本次添加的资料只留在浏览器会话内，刷新即清空，不会被发布到 GitHub。</p>`,'<span>演示解读，不伪称在线模型</span>'+btn('明白了','close'),'KNOWLEDGE ENGINE V2.2');}
+  const oldStop=stop;
+  stop=function(notify=true){cancelKnowledge(true);oldStop(notify);};
+  page=function(v,write=true){
+    const same=S.page===v,y=window.scrollY,x=window.scrollX;
+    if(v!=='knowledge')cancelKnowledge(true);
+    original.page(v,write);if(S.page==='docs')enhanceDocs();
+    if(same)window.scrollTo({top:y,left:x,behavior:'instant'});
+  };
+  actions.new=function(){cancelKnowledge(false);C.turns=[];C.root='';C.draft='';C.subject='';S.history=[];original.newChat();};
+  actions.reset=function(){cancelKnowledge(false);C.turns=[];C.root='';C.subject='';C.draft='';C.scope='builtin';original.reset();S.answered=false;};
+  function capability(){modal('资料在哪里，与回答是否智能，是两件事',`<h3>这版已经能做</h3><p>依据样例数值形成结论、解释计算方法和判断边界，保留当前对话上下文。添加的 TXT / MD 可做段落归纳，CSV 可选列、计算差值并引用来源。</p><h3>仍然不能冒充的能力</h3><p>当前没有连接通用大模型。文本解释采用抽取与规则，无法可靠理解任意问题；不含 PDF 解析、图片识别、语义向量检索或复杂统计推断。</p><h3>处理进度代表什么</h3><p>提交问题后展示资料整理、条件核对与分段输出流程。步骤由本地代码组织，不是通用大模型的思维过程；新增的展示节奏不会改变数据或计算结果。</p><p>本次添加的资料只留在浏览器会话内，刷新即清空，不会被发布到 GitHub。</p>`,'<span>演示解读，不伪称在线模型</span>'+btn('明白了','close'),'KNOWLEDGE ENGINE V2.2');}
   actions.about=function(){original.about();$('dialogBody').insertAdjacentHTML('afterbegin','<div class="callout"><b>V2.2 问答层已更新：</b>支持添加文本 / CSV 参与本次资料问答，提供规则解释和追问；仍无通用大模型、PDF 解析或图片识别。</div>');$('dialogBody').innerHTML=$('dialogBody').innerHTML.replace('新添加资料不会参与问答，不具备PDF解析与图片识别。','添加的文本 / CSV 可用于本次资料问答；不具备 PDF 解析与图片识别。');};
   actions.settings=function(){original.settings();$('dialogBody').insertAdjacentHTML('beforeend','<p>知识助手使用 V2.2 规则解读引擎；添加文本可参与本次问答，不自动上传。</p>');};
   function enhanceDocs(){
     const screen=$('screen');if(!screen||$('knowledgeFiles'))return;
     screen.querySelector('.page-head p').textContent='添加文本或 CSV，选择“基于此资料提问”，查看结论、解释和原文依据。';
     screen.querySelectorAll('p.tiny').forEach(el=>{if(el.textContent.includes('不自动参与问答'))el.textContent='文本 / CSV 可用于本次资料问答；图片仅预览。资料不上传服务器，刷新后清空。';});
-    const list=files();screen.insertAdjacentHTML('beforeend',`<section class="card pad knowledge-files" id="knowledgeFiles"><div class="row between"><h3>让资料参与回答，而不只是查看</h3><button class="btn soft" data-co="sample">载入一份演示台账并提问</button></div><p>先选资料，再问“差异有多大”“为什么不能直接下结论”“还需补什么证据”。</p>${list.map(f=>`<div class="docitem"><div class="grow"><b>${E(f.name)}</b><small>${/\.csv$/i.test(f.name)?'可选数值列并解释差异':'段落归纳与原文引用'} · 本次会话</small></div><button class="btn primary" data-query-file="${f.cid}">基于此资料提问 →</button></div>`).join('')}</section>`);
+    const list=files();screen.insertAdjacentHTML('beforeend',`<section class="card pad knowledge-files" id="knowledgeFiles"><div class="row between"><h3>让资料参与回答，而不只是查看</h3><button class="btn soft" data-co="sample">载入演示台账，准备提问</button></div><p>先选资料，再问“差异有多大”“为什么不能直接下结论”“还需补什么证据”。</p>${list.map(f=>`<div class="docitem"><div class="grow"><b>${E(f.name)}</b><small>${/\.csv$/i.test(f.name)?'可选数值列并解释差异':'段落归纳与原文引用'} · 本次会话</small></div><button class="btn primary" data-query-file="${f.cid}">基于此资料提问 →</button></div>`).join('')}</section>`);
   }
   addFiles=async function(ff){await original.addFiles(ff);files();if(S.page==='docs'){$('knowledgeFiles')?.remove();enhanceDocs();}if(ff.some(f=>/\.(?:txt|md|csv)$/i.test(f.name)))toast('资料已添加，点击“基于此资料提问”即可得到解读；不上传服务器。');};
   function openSource(id){const i=S.files.findIndex(f=>f.cid===id);if(i>=0)openLocal(i);else toast('这份会话资料已移除，回答仍保留当时的证据快照。');}
-  function askFile(id){if(!files().some(f=>f.cid===id))return;C.scope=id;C.root='';C.turns=[];S.answered=false;page('knowledge');ask('请概括这份资料，并解释主要结论');}
+  function askFile(id){if(!files().some(f=>f.cid===id))return;cancelKnowledge(false);C.scope=id;C.root='';C.subject='';C.turns=[];S.history=[];S.answered=false;C.draft='';prepareQuestion('请概括这份资料，并解释主要结论');}
   function transcript(){modal('本次连续对话',C.turns.map((t,i)=>`<details class="previous-turn" ${i===C.turns.length-1?'open':''}><summary>${i+1}. ${E(t.q)}</summary>${renderAnswer(t,false)}</details>`).join('')||'<p>尚未提问。</p>','<span>仅当前页面保存，刷新后清空。</span>'+btn('关闭','close'));}
   function answerText(){const t=C.turns.at(-1);if(!t)return '';const box=document.createElement('div');box.innerHTML=renderAnswer(t,false);box.querySelectorAll('button,select').forEach(e=>e.remove());box.querySelectorAll('h3,p,section,td').forEach(e=>e.append(document.createTextNode('\n')));return '# '+t.q+'\n\n来源：'+t.sourceName+'\n规则解读演示，未连接通用大模型。\n\n'+box.textContent.trim();}
   document.addEventListener('click',async event=>{
-    const el=event.target.closest('[data-follow],[data-co],[data-open-source],[data-query-file]');if(!el)return;
+    const el=event.target.closest('[data-follow],[data-co],[data-open-source],[data-query-file]');if(!el||el.disabled)return;
     if(el.dataset.follow){if(S.demo)stop(false);ask(el.dataset.follow);}else if(el.dataset.openSource)openSource(el.dataset.openSource);else if(el.dataset.queryFile)askFile(el.dataset.queryFile);else{
       const action=el.dataset.co;
-      if(action==='capabilities')capability();if(action==='transcript')transcript();
+      if(action==='capabilities')capability();if(action==='transcript')transcript();if(action==='stop-answer'){cancelKnowledge(true);page('knowledge');toast('已停止，本次任务不会在后台继续输出');}
       if(action==='export')download('活塞知识助手_问答解释.md',answerText());
       if(action==='copy'){try{await navigator.clipboard.writeText(answerText());toast('已复制回答、解释与来源');}catch(_){modal('复制本次回答','<textarea id="copyAnswer" style="width:100%;min-height:240px" readonly>'+E(answerText())+'</textarea>');$('copyAnswer').select();}}
       if(action==='sample'){const text='样品编号,材料牌号,热处理状态,测试温度(°C),应力幅(MPa),疲劳寿命(次),数据说明\n例-A,42CrMo,调质 A,350,300,120000,人工构造示例\n例-B,42CrMo,调质 B,350,300,150000,人工构造示例\n例-C,42CrMo,调质 C,350,300,180000,人工构造示例';let f=files().find(f=>f.name==='演示用_材料疲劳对比.csv');if(!f){if(S.files.length>=12){toast('请先移除一份资料');return;}f={name:'演示用_材料疲劳对比.csv',size:new Blob([text]).size,image:false,text};S.files.push(f);files();}askFile(f.cid);}
     }
   });
-  document.addEventListener('change',event=>{if(event.target.id==='copilotSource'){C.scope=event.target.value;C.turns=[];C.root='';S.answered=false;S.chatToken++;C.pending=false;S.busy=false;page('knowledge');}if(event.target.id==='copilotMetric'){const f=chosen();if(f){C.metric[f.cid]=+event.target.value;ask('解释这个指标的差异');}}});
+  document.addEventListener('change',event=>{if(event.target.id==='copilotSource'){cancelKnowledge(false);C.scope=event.target.value;C.turns=[];C.root='';C.subject='';C.draft='';S.history=[];S.answered=false;page('knowledge');}if(event.target.id==='copilotMetric'){const f=chosen();if(f){C.metric[f.cid]=+event.target.value;prepareQuestion('解释这个指标的差异');}}});
+  // Suggestions prepare a draft. Only Send / Enter (or explicit auto-demo) runs a task.
+  document.addEventListener('click',event=>{const el=event.target.closest('[data-draft],[data-ask],[data-follow]');if(!el)return;event.preventDefault();event.stopImmediatePropagation();if(C.pending){toast('请先停止当前回答，再编辑下一个问题');return;}if(S.demo)stop(false);if(el.dataset.ask){C.scope='builtin';prepareQuestion(questions[el.dataset.ask]||'');}else prepareQuestion(el.dataset.draft||el.dataset.follow||'');},true);
+  document.addEventListener('input',event=>{if(event.target.id==='questionInput'){C.draft=event.target.value;if($('draftCount'))$('draftCount').textContent=C.draft.length+' / 800';if($('send'))$('send').disabled=C.pending||!C.draft.trim();}});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&C.pending&&$('overlay').hidden){cancelKnowledge(true);page('knowledge');toast('已停止当前回答');}});
+
   window.PistonKnowledge={parseCSV,numericColumns,topicOf,focusOf,answerText,state:C};
+  actions.history=transcript;
   page(S.page,false);
+  document.documentElement.classList.remove('knowledge-boot');
 })();
